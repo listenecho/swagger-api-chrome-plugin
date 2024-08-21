@@ -1,21 +1,20 @@
-import React, { useEffect, useRef, useState } from "react";
-import Prism from 'prismjs';
-import 'prismjs/themes/prism-twilight.css'
-import 'prismjs/components/prism-javascript';
+import React, { useEffect, useState } from "react";
+import { Highlight, themes } from "prism-react-renderer"
+import { CopyToClipboard } from "react-copy-to-clipboard";
 import "./index.css"
-
 
 type Template = {
   id: string;
   name: string;
   code: string;
   active?: boolean;
+  header?: string;
 }
 
 const DEFAULT_TEMPLATE = {
   id: "-1",
   name: '示例模板',
-  active: false,
+  active: true,
   code: `
     配置解释：
 
@@ -39,6 +38,10 @@ const DEFAULT_TEMPLATE = {
         method: '$apiMethod$',
         $apiReplaceDefault$
     });
+  `,
+  header: `
+   /**  头部公共代码 **/
+    import { request } from '@/utils/request';
   `
 }
 
@@ -51,8 +54,7 @@ const Modal: React.FC<{
   const [selectedItem, setSelectedItem] = useState<Template>(DEFAULT_TEMPLATE);
   const [inputValue, setInputValue] = useState(DEFAULT_TEMPLATE.code);
   const [nameValue, setNameValue] = useState(DEFAULT_TEMPLATE.name);
-
-
+  const [commonHeadervalue, setCommonHeader] = useState(DEFAULT_TEMPLATE?.header);
 
   const handleItemClick = (item) => {
     setTemplate((old) => old.map((i) => {
@@ -67,13 +69,10 @@ const Modal: React.FC<{
         active: false,
       };
     }));
-    setSelectedItem(item);
-    setInputValue(item.code); // 将选中的条目填充到文本框
-    setNameValue(item.name); // 将选中的条目填充到文本框
   };
 
   const handleDelete = () => {
-    if(selectedItem.id === "-1") return alert("示例模板不可删除")
+    if (selectedItem.id === "-1") return alert("示例模板不可删除")
     const newTemplates = templates.filter(item => item.id !== selectedItem?.id)
     setTemplate(newTemplates.map((item, index) => {
       if (index === 0) {
@@ -84,9 +83,6 @@ const Modal: React.FC<{
       }
       return item
     }));
-    setSelectedItem(newTemplates?.[0] || {}); // 选择第一个条目或为空
-    setInputValue(newTemplates?.[0]?.code || ""); // 清空文本框
-    setNameValue(newTemplates?.[0]?.name || ""); // 清空文本框
   };
 
   const handleInputChange = (e) => {
@@ -99,8 +95,20 @@ const Modal: React.FC<{
       }
       return item;
     }));
-    setInputValue(e.target.value);
   };
+
+  const handleCommonHeaderChange = (e) => {
+    setTemplate((old) => old.map(item => {
+      if (item.id === selectedItem?.id) {
+        return {
+          ...item,
+          header: e.target.value,
+        }
+      }
+      return item;
+    }));
+  }
+
 
   const handleNameChange = (e) => {
     setTemplate((old) => old.map(item => {
@@ -113,7 +121,6 @@ const Modal: React.FC<{
       return item
     }
     ));
-    setNameValue(e.target.value);
   }
 
   const handleAdd = () => {
@@ -121,34 +128,39 @@ const Modal: React.FC<{
       id: Math.random().toString(36).substring(2, 12),
       name: "新模板",
       code: "",
-      active: false
+      active: true,
+      header: ""
     }
     setTemplate([
-      ...templates,
+      ...templates.map(item => ({ ...item, active: false })),
       newTemplate
     ]);
-    setSelectedItem(newTemplate);
-    setInputValue(newTemplate.code);
-    setNameValue(newTemplate.name);
   };
 
-const handleUpdateApi = () => {
-  updateTemplate(selectedItem)
-}
+  const handleUpdateApi = () => {
+    updateTemplate(selectedItem)
+  }
 
   useEffect(() => {
     if (!isOpen) return
-    // chrome.storage.local.get(['codeTemplate'], function (result) {
-    //   const data = result.codeTemplate ? JSON.parse(result.codeTemplate) : [];
-    //   if (data.length > 0) {
-    //     const activeIndex = data.findIndex(item => item.active) 
-    //     setTemplate(data);
-    //     setInputValue(data?.[activeIndex]?.code || ''); // 将第一个条目填充到文本框
-    //     setSelectedItem(data?.[activeIndex] || ''); // 选择第一个条目
-    //     setNameValue(data?.[activeIndex]?.name || ''); // 将第一个条目填充到文本框
-    //   }
-    // });
+    chrome.storage.local.get(['codeTemplate'], function (result) {
+      const data = result.codeTemplate ? JSON.parse(result.codeTemplate) : [];
+      if (data.length > 0) {
+        setTemplate(data);
+      } 
+    });
   }, [])
+
+
+  useEffect(() => {
+    if (!isOpen) return
+    const activeIndex = templates.findIndex(item => item.active) 
+    const index = activeIndex === -1 ? 0 : activeIndex
+    setCommonHeader(templates?.[index]?.header || ''); // 将选中的条目填充到文本框
+    setInputValue(templates?.[index]?.code || ''); // 将选中的条目填充到文本框
+    setNameValue(templates?.[index]?.name || ''); // 将选中的条目填充到文本框
+    setSelectedItem(templates?.[index] || {}); // 选择第一个条目或为空
+  }, [templates ,selectedItem])
 
 
   useEffect(() => {
@@ -179,13 +191,18 @@ const handleUpdateApi = () => {
           selectedItem?.id && <div className="modal-right">
             <input type="text" style={{ width: 280, marginBottom: 12, marginTop: 20 }} value={nameValue} onChange={handleNameChange} />
             <textarea
+              value={commonHeadervalue}
+              onChange={handleCommonHeaderChange}
+              style={{ height: 100, width: 400, marginBottom: 12 }}
+            />
+            <textarea
               value={inputValue}
               onChange={handleInputChange}
               style={{ height: 400, width: 400 }}
             />
             <div>
               <button className="save-button" onClick={handleDelete}>删除模板</button>
-              <button className="save-button" style={{ marginLeft: 8}} onClick={handleUpdateApi}>更新API</button>
+              <button className="save-button" style={{ marginLeft: 8 }} onClick={handleUpdateApi}>更新API</button>
             </div>
           </div>
         }
@@ -197,21 +214,28 @@ const CodeDisplay: React.FC<{
   code: string;
   language: string;
 }> = ({ code, language }) => {
-  const ref = useRef(null);
-  useEffect(() => {
-    if (ref && ref.current) {
-      Prism.highlightElement(ref.current);
-    }
-  }, [code]);
-
-  return (
-    <pre >
-      <code ref={ref} className={`prism-code language-${language}`}>
-        {code}
-      </code>
-    </pre>
-  );
-
+  return <Highlight
+    code={code}
+    theme={themes.oneDark}
+    language={language}
+  >
+    {({ className, style, tokens, getLineProps, getTokenProps }) => (
+      <pre style={{
+        ...style,
+        fontSize: 14,
+        paddingTop: 20,
+        paddingLeft: 20,
+      }} className={className}>
+        {tokens.map((line, i) => (
+          <div key={i} {...getLineProps({ line })}>
+            {line.map((token, key) => (
+              <span key={key} {...getTokenProps({ token })} />
+            ))}
+          </div>
+        ))}
+      </pre>
+    )}
+  </Highlight>
 };
 
 
@@ -265,7 +289,7 @@ function App() {
           }
         })
 
-        if(apiStr) {
+        if (apiStr) {
           const newpath2 = {}
           Object.keys(newpath).forEach(path => {
             const method = newpath[path];
@@ -300,23 +324,29 @@ function App() {
         apiSummary: apiData.summary,
         apiOperationId: apiData.operationId,
         apiPath: path,
-        apiMethod: method.toLowerCase()
+        apiMethod: method.toLowerCase(),
+        apiReplaceDefault: `${method.toLowerCase() === 'post' ? 'data' : 'params'}: params`
       }
-      const replaceDate = `${data?.apiMethod === 'post' ? 'data' : 'params'}: params`
+      if (["put", "delete", "update"].includes(method.toLowerCase())) {
+        data.apiReplaceDefault = ""
+      }
+      // 去除apipath上的{xx}，提取出xx 这个属性
+      const key = path.match(/\{(\w+)\}/g)
+      if (key?.length) {
+        data.apiPath = data.apiPath.replace(/{\w+}/g, "") + '${params.' + key?.[0].replace(/{|}/g, "") + '}'
+      }
       const code = template.code.replace(/\$(\w+)\$/g, (match, key) => {
         return data[key]
-      }).replace(/apiReplaceDefault/g, replaceDate)
+      })
       return code
     }
-
-
     let code = ""
     // 找到所有API并生成代码
     Object.keys(data.paths).forEach(apiPath => {
       Object.keys(data.paths[apiPath]).forEach(method => {
         const apiData = data.paths[apiPath][method];
         // 增加code 换行
-        code += generateRequestCode(apiPath, method, apiData) + '\n\n';
+        code += generateRequestCode(apiPath, method, apiData) + '\n\n\n\n';
       });
     });
     setCode(code);
@@ -330,13 +360,30 @@ function App() {
 
 
   return <div className="apps">
-    <button onClick={() => {
-      window.location.reload();
-    }}>刷新</button>
-    <button style={{ marginLeft: 8}} onClick={() => setIsModalOpen(true)}>配置</button>
-    {isModalOpen && <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} updateTemplate={setTemplate}/>}
-    <div className="codes">
-      <CodeDisplay code={code} language={"javascript"}  />
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      height: 40,
+      paddingTop: 20,
+      paddingLeft: 20,
+      width: '100%',
+      backgroundColor: '#f0f0f0',
+    }}>
+      <strong>当前模板： {template.name}</strong>
+      <button style={{ marginLeft: 8, marginRight: 8 }} onClick={() => {
+        window.location.reload();
+      }}>刷新</button>
+      <button onClick={() => setIsModalOpen(true)}>配置</button>
+      <CopyToClipboard text={code}>
+        <button style={{ marginLeft: 8 }}>复制代码</button>
+      </CopyToClipboard>
+    </div>
+    {isModalOpen && <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} updateTemplate={setTemplate} />}
+    <div className="codes" style={{
+      marginTop: 70
+    }}>
+      <CodeDisplay code={(template?.header ? template.header + '\n\n\n\n' : "") +  code.substring(1, 500)} language={"javascript"} />
     </div>
   </div>;
 }
