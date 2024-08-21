@@ -22,13 +22,16 @@ export default defineConfig({
   },
 
   build: {
-    outDir: "dist/src",
+    outDir: "dist",
 
     rollupOptions: {
       input: {
         index: path.resolve(__dirname, "./index.html"),
         background: path.resolve(__dirname, "./src/background.ts"),
-        // manifest: path.resolve(__dirname, "./manifest.json"),
+        manifest: path.resolve(__dirname, "./manifest.json"),
+        content: path.resolve(__dirname, "./src/content.ts"),
+        script: path.resolve(__dirname, "./src/script.ts"),
+
       },
       output: {
         entryFileNames: "[name].js",
