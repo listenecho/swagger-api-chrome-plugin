@@ -3,7 +3,6 @@
 // 获取页面元素类名为 information-container 下的 a 标签 href 属性
 function getInformationContainerAHref() {
   setTimeout(async () => {
-
     const informationContainer = document.getElementsByClassName('information-container')[0]
     const swaggerUrl = informationContainer?.querySelector('a')?.href;
     if (!swaggerUrl) return

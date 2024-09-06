@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Highlight, themes } from "prism-react-renderer"
 import { CopyToClipboard } from "react-copy-to-clipboard";
+import Textarea from 'rc-textarea';
+
 import "./index.css"
 
 type Template = {
@@ -45,6 +47,7 @@ const DEFAULT_TEMPLATE = {
   `
 }
 
+
 const Modal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
@@ -52,9 +55,7 @@ const Modal: React.FC<{
 }> = ({ isOpen, onClose, updateTemplate }) => {
   const [templates, setTemplate] = useState<Array<Template>>([DEFAULT_TEMPLATE]);
   const [selectedItem, setSelectedItem] = useState<Template>(DEFAULT_TEMPLATE);
-  const [inputValue, setInputValue] = useState(DEFAULT_TEMPLATE.code);
-  const [nameValue, setNameValue] = useState(DEFAULT_TEMPLATE.name);
-  const [commonHeadervalue, setCommonHeader] = useState(DEFAULT_TEMPLATE?.header);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleItemClick = (item) => {
     setTemplate((old) => old.map((i) => {
@@ -84,17 +85,24 @@ const Modal: React.FC<{
       return item
     }));
   };
-
   const handleInputChange = (e) => {
+    const newValue = e.target.value;
+    const cursorPosition = e.target.selectionStart;
+
     setTemplate((old) => old.map(item => {
       if (item.id === selectedItem?.id) {
         return {
           ...item,
-          code: e.target.value,
+          code: newValue,
         }
       }
       return item;
     }));
+
+    // Move cursor to the preserved position
+    if (textareaRef.current) {
+      textareaRef.current.selectionStart = textareaRef.current.selectionEnd = cursorPosition;
+    }
   };
 
   const handleCommonHeaderChange = (e) => {
@@ -108,7 +116,6 @@ const Modal: React.FC<{
       return item;
     }));
   }
-
 
   const handleNameChange = (e) => {
     setTemplate((old) => old.map(item => {
@@ -147,21 +154,16 @@ const Modal: React.FC<{
       const data = result.codeTemplate ? JSON.parse(result.codeTemplate) : [];
       if (data.length > 0) {
         setTemplate(data);
-      } 
+      }
     });
   }, [])
 
-
   useEffect(() => {
     if (!isOpen) return
-    const activeIndex = templates.findIndex(item => item.active) 
+    const activeIndex = templates.findIndex(item => item.active)
     const index = activeIndex === -1 ? 0 : activeIndex
-    setCommonHeader(templates?.[index]?.header || ''); // 将选中的条目填充到文本框
-    setInputValue(templates?.[index]?.code || ''); // 将选中的条目填充到文本框
-    setNameValue(templates?.[index]?.name || ''); // 将选中的条目填充到文本框
     setSelectedItem(templates?.[index] || {}); // 选择第一个条目或为空
-  }, [templates ,selectedItem])
-
+  }, [templates, selectedItem])
 
   useEffect(() => {
     if (!isOpen) return
@@ -189,14 +191,15 @@ const Modal: React.FC<{
         </div>
         {
           selectedItem?.id && <div className="modal-right">
-            <input type="text" style={{ width: 280, marginBottom: 12, marginTop: 20 }} value={nameValue} onChange={handleNameChange} />
-            <textarea
-              value={commonHeadervalue}
+            <input type="text" style={{ width: 280, marginBottom: 12, marginTop: 20 }} value={selectedItem.name} onChange={handleNameChange} />
+            <Textarea
+              value={selectedItem.header}
               onChange={handleCommonHeaderChange}
               style={{ height: 100, width: 400, marginBottom: 12 }}
             />
-            <textarea
-              value={inputValue}
+            <Textarea
+              ref={textareaRef}
+              value={selectedItem.code}
               onChange={handleInputChange}
               style={{ height: 400, width: 400 }}
             />
@@ -210,6 +213,8 @@ const Modal: React.FC<{
     </div>
   );
 };
+
+
 const CodeDisplay: React.FC<{
   code: string;
   language: string;
@@ -240,27 +245,31 @@ const CodeDisplay: React.FC<{
 
 
 function App() {
-  const [code, setCode] = useState('');
   const [swaggerData, setSwaggerData] = useState<any>(null);
   const swaggerDateRef = React.useRef(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [template, setTemplate] = useState<Template>({} as Template);
+  const [totals, setTotals] = useState(0);
+  const [renderCounts, setRenderCounts] = useState(500);
+  const [codes, setCodes] = useState<string[]>([]);
 
   useEffect(() => {
     // 从chrome stroage 中获取数据
-    chrome.storage.local.get(['swaggerData', "codeTemplate"], function (result) {
+    chrome.storage.local.get(['swaggerData', "codeTemplate", "renderCounts"], function (result) {
       const { swaggerData, codeTemplate } = result;
       if (swaggerData) {
         const sourceData = JSON.parse(swaggerData);
         setSwaggerData(sourceData)
         swaggerDateRef.current = sourceData;
       }
+      if (result.renderCounts) {
+        setRenderCounts(result.renderCounts);
+      }
       if (codeTemplate) {
         const t = JSON.parse(codeTemplate).find(item => item.active);
         setTemplate(t);
       }
     });
-
   }, [])
 
 
@@ -280,7 +289,7 @@ function App() {
           const newMethod = {};
           Object.keys(method).forEach(m => {
             const api = method[m];
-            if (api.tags.includes(apiType)) {
+            if (api.tags.includes(apiType) || !apiType) {
               newMethod[m] = api;
             }
           })
@@ -305,7 +314,7 @@ function App() {
             }
           })
           newpath = newpath2;
-        }
+        } 
         _swagger_data_.paths = newpath;
         getRenderData(_swagger_data_);
 
@@ -340,23 +349,40 @@ function App() {
       })
       return code
     }
-    let code = ""
+    const codes: string[] = []
+    let count = 0;
     // 找到所有API并生成代码
     Object.keys(data.paths).forEach(apiPath => {
       Object.keys(data.paths[apiPath]).forEach(method => {
         const apiData = data.paths[apiPath][method];
         // 增加code 换行
-        code += generateRequestCode(apiPath, method, apiData) + '\n\n\n\n';
+        // code += generateRequestCode(apiPath, method, apiData) + '\n\n\n\n';
+        codes.push(generateRequestCode(apiPath, method, apiData))
+        count++;
       });
     });
-    setCode(code);
+    setCodes(codes);
+    setTotals(count);
   }
+
+  const handleChangeRenderCount = (e) => {
+    setRenderCounts(e.target.value)
+  }
+
+  // 将渲染数量缓存到本地
+  useEffect(() => {
+    chrome.storage.local.set({ renderCounts: renderCounts });
+  }, [renderCounts])
 
   useEffect(() => {
     getRenderData(swaggerData)
   }, [swaggerData, template])
 
 
+  const renderCodeStr = useMemo(() => {
+    const header = template?.header ? template.header + '\n\n\n\n' : ""
+    return (header + codes.slice(0, renderCounts).join("\n\n\n\n")) + `\n\n\n\n`
+  }, [renderCounts, codes, template])
 
 
   return <div className="apps">
@@ -364,26 +390,38 @@ function App() {
       position: 'fixed',
       top: 0,
       left: 0,
-      height: 40,
+      height: 60,
       paddingTop: 20,
       paddingLeft: 20,
       width: '100%',
       backgroundColor: '#f0f0f0',
     }}>
-      <strong>当前模板： {template.name}</strong>
-      <button style={{ marginLeft: 8, marginRight: 8 }} onClick={() => {
-        window.location.reload();
-      }}>刷新</button>
-      <button onClick={() => setIsModalOpen(true)}>配置</button>
-      <CopyToClipboard text={code}>
-        <button style={{ marginLeft: 8 }}>复制代码</button>
-      </CopyToClipboard>
+      <div>
+
+        <strong>当前模板： {template.name}</strong>
+        <button style={{ marginLeft: 8, marginRight: 8 }} onClick={() => {
+          window.location.reload();
+        }}>刷新</button>
+        <button onClick={() => setIsModalOpen(true)}>配置</button>
+        <CopyToClipboard text={renderCounts}>
+          <button style={{ marginLeft: 8 }}>复制代码</button>
+        </CopyToClipboard>
+      </div>
+      <div style={{ display: "flex", gap: 12, }}>
+        <p><strong>接口总数</strong> <span>{totals}</span></p>
+        <p><strong>渲染请求方法数：</strong> <span><input value={renderCounts} onChange={handleChangeRenderCount} /></span></p>
+      </div>
     </div>
     {isModalOpen && <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} updateTemplate={setTemplate} />}
     <div className="codes" style={{
       marginTop: 70
     }}>
-      <CodeDisplay code={(template?.header ? template.header + '\n\n\n\n' : "") +  code.substring(1, 500)} language={"javascript"} />
+      <div style={{
+        height: '90vh',
+        overflow: 'auto',
+      }} >
+        <CodeDisplay code={renderCodeStr} language={"javascript"} />
+      </div>
     </div>
   </div>;
 }
