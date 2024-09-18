@@ -1,7 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import copy from "rollup-plugin-copy"; //引入插件
-
 import * as path from "path";
 
 // https://vitejs.dev/config/

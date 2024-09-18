@@ -17,7 +17,7 @@
     padding: 20px;
     border-radius: 8px;
     display: flex;
-    width: 600px;
+    width: 700px;
   }
   
   .modal-left {
@@ -46,9 +46,6 @@
     right: 10px;
   }
   
-  .delete-button, .save-button {
-    margin-top: 10px;
-  }
   
   .modal-right {
     flex: 1;
