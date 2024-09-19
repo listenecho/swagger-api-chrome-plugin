@@ -1,18 +1,58 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { CopyToClipboard } from "react-copy-to-clipboard";
 import CodeConfigModal from "./components/CodeConfigModal";
 import CodeDisplay from "./components/CodeDisplay";
 import "./index.css"
+import { DEFAULT_TEMPLATE } from "./contant";
 
 
 function App() {
   const [swaggerData, setSwaggerData] = useState<any>(null);
-  const swaggerDateRef = React.useRef(null);
+  const swaggerDataRef = React.useRef(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [template, setTemplate] = useState<Template>({} as Template);
   const [totals, setTotals] = useState(0);
-  const [renderCounts, setRenderCounts] = useState(500);
+  const [renderCounts, setRenderCounts] = useState(10);
   const [codes, setCodes] = useState<string[]>([]);
+  const workerRef = useRef<Worker | null>(null);
+  const [alltemplates, setAppAllTemplates] = useState<Array<Template>>([DEFAULT_TEMPLATE]);
+
+
+  useEffect(() => {
+    const workerURL = chrome.runtime.getURL('./worker.js');
+    workerRef.current = new Worker(workerURL);
+    workerRef.current.onmessage = (event) => {
+      if (event.data.type === 'processedData') {
+        setCodes(event.data.codes);
+        setTotals(event.data.totals);
+      }
+    };
+
+    return () => {
+      if (workerRef.current) {
+        workerRef.current.terminate();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    // 监听消息
+    chrome.runtime.onMessage.addListener(function (message) {
+      if (message.type === 'refresh') {
+        window.location.reload();
+      }
+    });
+  }, [])
+
+
+  useEffect(() => {
+    workerRef.current?.postMessage({
+      type: 'updateSwaggerData',
+      swaggerData: swaggerData,
+      template: template
+    });
+  }, [swaggerData, template])
+
 
   useEffect(() => {
     // 从chrome stroage 中获取数据
@@ -21,124 +61,56 @@ function App() {
       if (swaggerData) {
         const sourceData = JSON.parse(swaggerData);
         setSwaggerData(sourceData)
-        swaggerDateRef.current = sourceData;
+        swaggerDataRef.current = sourceData;
       }
       if (result.renderCounts) {
         setRenderCounts(result.renderCounts);
       }
+
       if (codeTemplate) {
-        const t = JSON.parse(codeTemplate).find(item => item.active);
-        setTemplate(t);
+        const ts = JSON.parse(codeTemplate);
+        if(ts.length === 0 ) {
+          setTemplate(DEFAULT_TEMPLATE);
+          setAppAllTemplates([DEFAULT_TEMPLATE]);
+        } else {
+          setTemplate(ts.find(item => item.active));
+          setAppAllTemplates(ts);
+        }
+      } else {
+        setTemplate(DEFAULT_TEMPLATE);
+        setAppAllTemplates([DEFAULT_TEMPLATE]);
       }
     });
   }, [])
 
 
   useEffect(() => {
-    // 监听chrome 消息
-    chrome.runtime.onMessage.addListener((message) => {
-      if (message.type === 'urlChange') {
-        const swaggerApiType = message.data;
-        const _swagger_data_ = JSON.parse(JSON.stringify(swaggerDateRef.current));
-        let newpath = {}
-        // 判断url 是否含有api
-        const apis = swaggerApiType.split("/")
-        const [apiType, apiStr] = apis;
-        // 移除path对象中的api 下面 get 对象或者 post 对象 tag 数组中不存在 swaggerApiType 的对象
-        Object.keys(_swagger_data_.paths).forEach(path => {
-          const method = _swagger_data_.paths[path];
-          const newMethod = {};
-          Object.keys(method).forEach(m => {
-            const api = method[m];
-            if (api.tags.includes(apiType) || !apiType) {
-              newMethod[m] = api;
-            }
-          })
-          if (Object.keys(newMethod).length) {
-            newpath[path] = newMethod;
-          }
-        })
-
-        if (apiStr) {
-          const newpath2 = {}
-          Object.keys(newpath).forEach(path => {
-            const method = newpath[path];
-            const newMethod = {};
-            Object.keys(method).forEach(m => {
-              const api = method[m];
-              if (api.operationId === apiStr) {
-                newMethod[m] = api;
-              }
-            })
-            if (Object.keys(newMethod).length) {
-              newpath2[path] = newMethod;
-            }
-          })
-          newpath = newpath2;
-        } 
-        _swagger_data_.paths = newpath;
-        getRenderData(_swagger_data_);
-
+    const messageListener = (message) => {
+      if (message.type === 'urlChange' && workerRef.current) {
+        workerRef.current.postMessage({
+          type: 'processData',
+          swaggerData: swaggerDataRef.current,
+          swaggerApiType: message.data,
+          template: template
+        });
       }
-    }
-    )
-  }, [template])
+    };
+    chrome.runtime.onMessage.addListener(messageListener);
+    return () => {
+      chrome.runtime.onMessage.removeListener(messageListener);
+    };
+  }, [template]);
 
-
-
-  function getRenderData(data: any) {
-    if (!data || !Object.keys(data).length || !template?.code) return
-    // 生成请求代码的函数
-    function generateRequestCode(path, method, apiData) {
-      const data = {
-        apiSummary: apiData.summary,
-        apiOperationId: apiData.operationId,
-        apiPath: path,
-        apiMethod: method.toLowerCase(),
-        apiReplaceDefault: `${method.toLowerCase() === 'post' ? 'data' : 'params'}: params`
-      }
-      if (["put", "delete", "update"].includes(method.toLowerCase())) {
-        data.apiReplaceDefault = ""
-      }
-      // 去除apipath上的{xx}，提取出xx 这个属性
-      const key = path.match(/\{(\w+)\}/g)
-      if (key?.length) {
-        data.apiPath = data.apiPath.replace(/{\w+}/g, "") + '${params.' + key?.[0].replace(/{|}/g, "") + '}'
-      }
-      const code = template.code.replace(/\$(\w+)\$/g, (match, key) => {
-        return data[key]
-      })
-      return code
-    }
-    const codes: string[] = []
-    let count = 0;
-    // 找到所有API并生成代码
-    Object.keys(data.paths).forEach(apiPath => {
-      Object.keys(data.paths[apiPath]).forEach(method => {
-        const apiData = data.paths[apiPath][method];
-        // 增加code 换行
-        // code += generateRequestCode(apiPath, method, apiData) + '\n\n\n\n';
-        codes.push(generateRequestCode(apiPath, method, apiData))
-        count++;
-      });
-    });
-    setCodes(codes);
-    setTotals(count);
-  }
-
-  const handleChangeRenderCount = (e) => {
-    setRenderCounts(e.target.value)
-  }
 
   // 将渲染数量缓存到本地
   useEffect(() => {
     chrome.storage.local.set({ renderCounts: renderCounts });
   }, [renderCounts])
 
-  useEffect(() => {
-    getRenderData(swaggerData)
-  }, [swaggerData, template])
 
+  const handleChangeRenderCount = (e) => {
+    setRenderCounts(e.target.value)
+  }
 
   const renderCodeStr = useMemo(() => {
     const header = template?.header ? template.header + '\n\n\n\n' : ""
@@ -158,22 +130,34 @@ function App() {
       backgroundColor: '#f0f0f0',
     }}>
       <div>
-
         <strong>当前模板： {template.name}</strong>
         <button style={{ marginLeft: 8, marginRight: 8 }} onClick={() => {
           window.location.reload();
         }}>刷新</button>
         <button onClick={() => setIsModalOpen(true)}>配置</button>
+
+        <button style={{ marginLeft: 8, }} onClick={() => {
+          chrome.storage.local.clear();
+          window.location.reload();
+        }}>清除缓存</button>
+
         <CopyToClipboard text={renderCounts}>
           <button style={{ marginLeft: 8 }}>复制代码</button>
         </CopyToClipboard>
+
       </div>
       <div style={{ display: "flex", gap: 12, }}>
         <p><strong>接口总数</strong> <span>{totals}</span></p>
         <p><strong>渲染请求方法数：</strong> <span><input value={renderCounts} onChange={handleChangeRenderCount} /></span></p>
       </div>
     </div>
-    {isModalOpen && <CodeConfigModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} updateTemplate={setTemplate} />}
+    {isModalOpen && <CodeConfigModal
+      isOpen={isModalOpen}
+      alltemplates={alltemplates}
+      onClose={() => setIsModalOpen(false)}
+      updateTemplate={setTemplate}
+      updateTemplates={setAppAllTemplates}
+    />}
     <div className="codes" style={{
       marginTop: 70
     }}>

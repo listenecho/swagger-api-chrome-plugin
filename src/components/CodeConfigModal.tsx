@@ -1,51 +1,16 @@
 
 import React, { useEffect,  useRef,  useState } from "react";
+import { DEFAULT_TEMPLATE } from "../contant";
 
-
-const DEFAULT_TEMPLATE = {
-  id: "-1",
-  name: '示例模板',
-  active: true,
-  code: `
-      配置解释：
-  
-      apiSummary ：        接口描述
-      apiOperationId：     接口ID
-      apiPath：            接口路径
-      apiMethod：          接口方法
-      apiReplaceDefault:   默认参数用于设置get与post请求参数
-  
-      示例代码：
-      注：api相关参数需要被$包裹
-  
-    /**
-     * $apiSummary$
-     * @method $apiMethod$
-     * @path $apiPath$
-     */
-      export const $apiOperationId$ = (params: any) => {
-        return request({
-          url: '$apiPath$',
-          method: '$apiMethod$',
-          $apiReplaceDefault$
-      });
-    `,
-  header: `
-     /**  头部公共代码 **/
-      import { request } from '@/utils/request';
-    `
-}
 
 const CodeConfigModal: React.FC<{
   isOpen: boolean;
+  alltemplates: Template[];
   onClose: () => void;
   updateTemplate: (template: Template) => void;
-}> = ({ isOpen, onClose, updateTemplate }) => {
+  updateTemplates: (templates: Template[]) => void;
+}> = ({ isOpen, onClose, updateTemplate, updateTemplates, alltemplates }) => {
 
-  /**
-   * 模板数据
-   */
-  const [templates, setTemplate] = useState<Array<Template>>([DEFAULT_TEMPLATE]);
 
   /**
    * 当前选择模板
@@ -67,7 +32,7 @@ const CodeConfigModal: React.FC<{
    * @param item 
    */
   const handleItemClick = (item) => {
-    setTemplate((old) => old.map((i) => {
+    const newTemplates = alltemplates.map((i) => {
       if (i.id === item.id) {
         return {
           ...i,
@@ -78,7 +43,8 @@ const CodeConfigModal: React.FC<{
         ...i,
         active: false,
       };
-    }));
+    });
+    updateTemplates(newTemplates)
   };
 
 
@@ -87,8 +53,8 @@ const CodeConfigModal: React.FC<{
    */
   const handleDelete = () => {
     if (selectedItem.id === "-1") return alert("示例模板不可删除")
-    const newTemplates = templates.filter(item => item.id !== selectedItem?.id)
-    setTemplate(newTemplates.map((item, index) => {
+    const newTemplates = alltemplates.filter(item => item.id !== selectedItem?.id)
+    updateTemplates(newTemplates.map((item, index) => {
       if (index === 0) {
         return {
           ...item,
@@ -130,8 +96,8 @@ const CodeConfigModal: React.FC<{
       active: true,
       header: ""
     }
-    setTemplate([
-      ...templates.map(item => ({ ...item, active: false })),
+    updateTemplates([
+      ...alltemplates.map(item => ({ ...item, active: false })),
       newTemplate
     ]);
   };
@@ -141,20 +107,20 @@ const CodeConfigModal: React.FC<{
    * 更新模板
    */
   const handleUpdateApi = () => {
-    setTemplate((old) => {
-      const newTemplates = old.map(item => {
-        if (item.id === selectedItem?.id) {
-          return {
-            ...item,
-            name: formData.name,
-            header: formData.header,
-            code: formData.code
-          }
+    const newTemplates = alltemplates.map(item => {
+      if (item.id === selectedItem?.id) {
+        return {
+          ...item,
+          name: formData.name,
+          header: formData.header,
+          code: formData.code
         }
-        return item
-      })
-      return newTemplates
+      }
+      return item
     })
+    updateTemplates(newTemplates)
+      chrome.storage.local.set({ codeTemplate: JSON.stringify(newTemplates) });
+
     updateTemplate({
       ...selectedItem,
       name: formData.name,
@@ -195,38 +161,18 @@ const CodeConfigModal: React.FC<{
 
   useEffect(() => {
     if (!isOpen) return
-    updateTemplate(templates.find(item => item.active) as Template)
-  }, [templates])
-  /**
-   * 获取模板
-   */
-  useEffect(() => {
-    if (!isOpen) return
-    chrome.storage.local.get(['codeTemplate'], function (result) {
-      const data = result.codeTemplate ? JSON.parse(result.codeTemplate) : [];
-      if (data.length > 0) {
-        setTemplate(data);
-      }
-    });
-  }, [])
-
+    updateTemplate(alltemplates.find(item => item.active) as Template)
+  }, [alltemplates])
 
  
   useEffect(() => {
     if (!isOpen) return
-    const activeIndex = templates.findIndex(item => item.active)
+    const activeIndex = alltemplates.findIndex(item => item.active)
     const index = activeIndex === -1 ? 0 : activeIndex
-    setSelectedItem(templates?.[index] || {}); // 选择第一个条目或为空
-  }, [templates, selectedItem])
+    setSelectedItem(alltemplates?.[index] || {}); // 选择第一个条目或为空
+  }, [alltemplates, selectedItem])
 
-  /**
-   * 保存模板
-   */
-  useEffect(() => {
-    if (!isOpen) return
-    // 将数据存储到本地
-    chrome.storage.local.set({ codeTemplate: JSON.stringify(templates) });
-  }, [templates]);
+
 
   useEffect(() => {
     if(!isOpen) {
@@ -252,7 +198,7 @@ const CodeConfigModal: React.FC<{
         <button className="close-button" onClick={onClose}>关闭</button>
         <div className="modal-left">
           <ul>
-            {templates?.map(item => (
+            {alltemplates?.map(item => (
               <li
                 key={item.id}
                 className={item.active ? 'selected' : ''}

@@ -5,7 +5,18 @@ import * as path from "path";
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    copy({
+      targets: [
+        {
+          src: "src/manifest.json", // 更新源文件路径
+          dest: "dist", // 确保目标路径正确
+        },
+      ],
+      hook: "writeBundle", // 更改执行时机
+    }),
+  ],
   server: {
     port: 4000,
   },
@@ -22,31 +33,17 @@ export default defineConfig({
 
   build: {
     outDir: "dist",
-
     rollupOptions: {
       input: {
         index: path.resolve(__dirname, "./index.html"),
         background: path.resolve(__dirname, "./src/background.ts"),
-        manifest: path.resolve(__dirname, "./manifest.json"),
         content: path.resolve(__dirname, "./src/content.ts"),
-        script: path.resolve(__dirname, "./src/script.ts"),
-
+        manifest: path.resolve(__dirname, "./src/manifest.json"),
+        worker: path.resolve(__dirname, "./src/worker.ts"),
       },
       output: {
         entryFileNames: "[name].js",
       },
-      plugins: [
-        copy({
-          targets: [
-            {
-              src: "./manifest.json",
-              dest: "./dist",
-              transform: (contents, filename) =>
-                contents.toString().replace(/\.\/dist\//g, "./"), // ./dist/ => ./
-            }, //执行拷贝
-          ],
-        }),
-      ],
     },
   },
 });

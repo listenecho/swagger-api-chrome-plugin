@@ -12,3 +12,20 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     )
   }
 });
+
+/**
+ * 打开侧边栏
+ */
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+});
+
+
+// 监听消息
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === 'refresh') {
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+      chrome.tabs.sendMessage(tabs[0].id as any, { type: 'refresh' });
+    });
+  }
+});
