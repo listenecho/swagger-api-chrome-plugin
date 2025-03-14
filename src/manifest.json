@@ -1,12 +1,18 @@
 {
-  "name": "swagger-helper",
+  "name": "Data Helper",
   "version": "1.0",
   "author": "Darwin",
-  "description": "根据用户配置的模板自动生成前端请求代码",
+  "description": "牛马专用",
   "manifest_version": 3,
   "background": {
     "service_worker": "background.js"
   },
+  "web_accessible_resources": [
+    {
+      "resources": ["injected.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "permissions": [
     "tabs",
     "activeTab",
@@ -20,9 +26,5 @@
       "run_at": "document_start",
       "resources": ["worker.js"]
     }
-  ],
-
-  "side_panel": {
-    "default_path": "./index.html"
-  }
+  ]
 }

@@ -40,6 +40,8 @@ export default defineConfig({
         content: path.resolve(__dirname, "./src/content.ts"),
         manifest: path.resolve(__dirname, "./src/manifest.json"),
         worker: path.resolve(__dirname, "./src/worker.ts"),
+        injected: path.resolve(__dirname, "./src/injected.ts"),
+
       },
       output: {
         entryFileNames: "[name].js",
